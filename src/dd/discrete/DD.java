@@ -126,6 +126,7 @@ public abstract class DD {
     public abstract int getVarNode(String var_name, double low, double high);
 
     /** @deprecated -- for backward compatibility, use at own risk **/
+    @Deprecated
     public abstract int getVarNode(int var_id, double low, double high);
 
     // Build a constant ADD

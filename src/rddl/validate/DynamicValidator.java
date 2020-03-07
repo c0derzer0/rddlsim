@@ -53,7 +53,7 @@ public class DynamicValidator {
 			
 		// Attempt to simulate one step... this will throw an exception if anything is undefined
 		sim._i._nHorizon = 2;
-		Result r = sim.run(pol, viz, rand_seed_sim);
+		Result r = sim.run(pol, viz, rand_seed_sim, 1);
 
 		// Show all variable names in use
 		if (RDDL.DEBUG_PVAR_NAMES)
