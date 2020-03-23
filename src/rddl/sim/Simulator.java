@@ -13,8 +13,6 @@ import java.util.*;
 
 import rddl.*;
 import rddl.viz.*;
-import rddl.viz.GenericScreenDisplay;
-import rddl.solver.mdp.vi.VI;
 import rddl.policy.*;
 import rddl.RDDL.*;
 import rddl.parser.parser;
@@ -165,7 +163,7 @@ public class Simulator {
 				}
 			}
 			//this.sb.setLength(this.sb.length() - 1);
-			if (trial%100==0) {
+			if (trial%10==0) {
 				System.out.println("trial:\t"+trial);
 				this.fw.write(this.sb.toString());
 				this.sb = new StringBuilder("");
@@ -177,6 +175,7 @@ public class Simulator {
 
 	public String getStateDescription(State s) {
   	StringBuilder sb = new StringBuilder();
+		StringBuilder actionSB = new StringBuilder();
 
   	PVAR_NAME state = new PVAR_NAME("running");
   	PVAR_NAME obs   = new PVAR_NAME("running-obs");
@@ -199,14 +198,26 @@ public class Simulator {
 		  	    ArrayList<ArrayList<LCONST>> gfluents = s.generateAtoms(p);
 						System.out.println("\n- " + var_type + ": " + p);
 		  	    for (ArrayList<LCONST> gfluent : gfluents){
-							System.out.println("type:\t"+s.getPVariableAssign(p, gfluent).getClass());
-							if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
-								sb.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
-								System.out.println(s.getPVariableAssign(p, gfluent));
+							if (!this.pomdp && var_type.equals("action")){
+								System.out.println("moved to after state");
+								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
+									actionSB.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
+									System.out.println(s.getPVariableAssign(p, gfluent));
+								} else {
+									actionSB.append(s.getPVariableAssign(p, gfluent));
+									actionSB.append("\t");
+									System.out.println(s.getPVariableAssign(p, gfluent));
+								}
 							} else {
-								sb.append(s.getPVariableAssign(p, gfluent));
-								sb.append("\t");
-								System.out.println(s.getPVariableAssign(p, gfluent));
+								System.out.println(gfluent+", type:\t"+s.getPVariableAssign(p, gfluent).getClass());
+								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
+									sb.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
+									System.out.println(s.getPVariableAssign(p, gfluent));
+								} else {
+									sb.append(s.getPVariableAssign(p, gfluent));
+									sb.append("\t");
+									System.out.println(s.getPVariableAssign(p, gfluent));
+								}
 							}
 						}
 						if (s._hmPVariables.get(obs) != null) {
@@ -226,7 +237,8 @@ public class Simulator {
 		  	}
 			}
 		}
-		return sb.toString();
+		System.out.println(actionSB.toString());
+		return sb.toString()+actionSB.toString();
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -261,9 +273,7 @@ public class Simulator {
 			pol.setRandSeed(rand_seed_policy);
 			pol.setRDDL(rddl);
 
-			//rddl.viz.GenericScreenDisplay gsd = new rddl.viz.GenericScreenDisplay();
 			StateViz viz = (StateViz)Class.forName(state_viz_class_name).newInstance();
-			//StateViz viz = (StateViz)gsd;
 
 			// Reset, pass a policy, a visualization interface, a random seed, and simulate!
 			Result r = sim.run(pol, viz, rand_seed_sim, i);
