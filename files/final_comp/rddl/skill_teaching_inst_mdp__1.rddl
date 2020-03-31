@@ -21,6 +21,6 @@ instance skill_teaching_inst_mdp__1 {
 	domain = skill_teaching_mdp;
  	non-fluents = nf_skill_teaching_inst_mdp__1;
 	max-nondef-actions = 1;
-	horizon = 1;
+	horizon = 10;
 	discount = 1.0;
 }

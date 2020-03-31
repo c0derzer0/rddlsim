@@ -15,6 +15,7 @@ import rddl.*;
 import rddl.viz.*;
 import rddl.policy.*;
 import rddl.RDDL.*;
+import rddl.solver.mdp.vi.VI;
 import rddl.parser.parser;
 import org.apache.commons.math3.*;
 import org.apache.commons.math3.random.*;

@@ -21,6 +21,6 @@ instance elevators_inst_mdp__1 {
 		elevator-at-floor(e0,f0);
 	};
 	max-nondef-actions = 1;
-	horizon = 1;
+	horizon = 10;
 	discount = 1.0;
 }
