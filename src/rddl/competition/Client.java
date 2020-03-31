@@ -1,6 +1,6 @@
 /**
  * RDDL: Main client code for interaction with RDDLSim server
- * 
+ *
  * @author Sungwook Yoon (sungwook.yoon@gmail.com)
  * @version 10/1/10
  *
@@ -37,6 +37,7 @@ import org.xml.sax.SAXException;
 
 import rddl.EvalException;
 import rddl.RDDL;
+import rddl.solver.mdp.vi.VI;
 import rddl.RDDL.DOMAIN;
 import rddl.RDDL.INSTANCE;
 import rddl.RDDL.LCONST;
@@ -54,13 +55,13 @@ import rddl.viz.StateViz;
  */
 
 public class Client {
-	
+
 	public static final boolean SHOW_XML = false;
 	public static final boolean SHOW_MSG = false;
 	public static final boolean SHOW_MEMORY_USAGE = true;
 	public static final Runtime RUNTIME = Runtime.getRuntime();
 	public static final int DEFAULT_RANDOM_SEED = 0;
-	private static DecimalFormat _df = new DecimalFormat("0.##");	
+	private static DecimalFormat _df = new DecimalFormat("0.##");
 	enum XMLType {
 		ROUND,TURN,ROUND_END,END_TEST,NONAME
 	}
@@ -80,9 +81,9 @@ public class Client {
 		reward = 0;
 		id = 0;
 	}
-	
+
 	/**
-	 * 
+	 *
 	 * @param args
 	 * 1. rddl description file name with RDDL syntax, with complete path (sysadmin.rddl)
 	 * 2. instance name in rddl / directory of rddl files
@@ -100,16 +101,16 @@ public class Client {
 		String clientName = "random";
 		String instanceName = null;
 		int randomSeed = DEFAULT_RANDOM_SEED;
-		
+
 		State      state;
 		INSTANCE   instance;
 		NONFLUENTS nonFluents = null;
 		DOMAIN     domain;
 		StateViz   stateViz;
-		
+
 		StringBuffer instr = new StringBuffer();
 		String TimeStamp;
-		
+
 		if ( args.length < 4 ) {
 			System.out.println("usage: rddlfilename hostname clientname policyclassname " +
 					"(optional) portnumber randomSeed instanceName/directory");
@@ -117,15 +118,15 @@ public class Client {
 		}
 		host = args[1];
 		clientName = args[2];
-		
+
 		double timeLeft = 0;
 		try {
 			// Cannot assume always in rddl.policy
 			Class c = Class.forName(args[3]);
-			
+
 			// Load RDDL files
 			rddl = new RDDL(args[0]);
-			
+
 			if ( args.length > 4 ) {
 				port = Integer.valueOf(args[4]);
 			}
@@ -140,30 +141,30 @@ public class Client {
 				System.exit(1);
 			}
 			state = new State();
-			
+
 			// Note: following constructor approach suggested by Alan Olsen
 			Policy policy = (Policy)c.getConstructor(
 					new Class[]{String.class}).newInstance(new Object[]{instanceName});
 			policy.setRDDL(rddl);
 			policy.setRandSeed(randomSeed);
-			
+
 			instance = rddl._tmInstanceNodes.get(instanceName);
 			if (instance._sNonFluents != null) {
 				nonFluents = rddl._tmNonFluentNodes.get(instance._sNonFluents);
 			}
 			domain = rddl._tmDomainNodes.get(instance._sDomain);
 			if (nonFluents != null && !instance._sDomain.equals(nonFluents._sDomain)) {
-				System.err.println("Domain name of instance and fluents do not match: " + 
+				System.err.println("Domain name of instance and fluents do not match: " +
 							instance._sDomain + " vs. " + nonFluents._sDomain);
 				System.exit(1);
 			}
-			
+
 			state.init(domain._hmObjects, nonFluents != null ? nonFluents._hmObjects : null, instance._hmObjects,
 					domain._hmTypes, domain._hmPVariables, domain._hmCPF,
 					instance._alInitState, nonFluents == null ? new ArrayList<PVAR_INST_DEF>() : nonFluents._alNonFluents, instance._alNonFluents,
-					domain._alStateConstraints, domain._alActionPreconditions, domain._alStateInvariants, 
+					domain._alStateConstraints, domain._alActionPreconditions, domain._alStateInvariants,
 					domain._exprReward, instance._nNonDefActions);
-			
+
 			// If necessary, correct the partially observed flag since this flag determines what content will be seen by the Client
 			if ((domain._bPartiallyObserved && state._alObservNames.size() == 0)
 					|| (!domain._bPartiallyObserved && state._alObservNames.size() > 0)) {
@@ -173,18 +174,18 @@ public class Client {
 				domain._bPartiallyObserved = observations_present;
 			}
 
-			// Not strictly enforcing flags anymore... 
+			// Not strictly enforcing flags anymore...
 			//if ((domain._bPartiallyObserved && state._alObservNames.size() == 0)
 			//		|| (!domain._bPartiallyObserved && state._alObservNames.size() > 0)) {
 			//	System.err.println("Domain '" + domain._sDomainName + "' partially observed flag and presence of observations mismatched.");
 			//}
-			
+
 			/** Obtain an address object of the server */
 			InetAddress address = InetAddress.getByName(host);
 			/** Establish a socket connetion */
 			Socket connection = new Socket(address, port);
 			System.out.println("RDDL client initialized");
-			
+
 			/** Instantiate a BufferedOutputStream object */
 			BufferedOutputStream bos = new BufferedOutputStream(connection.
 					getOutputStream());
@@ -201,7 +202,7 @@ public class Client {
 			 */
 			//InputStreamReader isr = new InputStreamReader(bis, "US-ASCII");
 			DOMParser p = new DOMParser();
-			
+
 			/**Read the socket's InputStream and append to a StringBuffer */
 
 			InputSource isrc = Server.readOneMessage(isr);
@@ -210,15 +211,15 @@ public class Client {
 			int r = 0;
 			for( ; r < client.numRounds; r++ ) {
 				if (SHOW_MEMORY_USAGE)
-					System.out.print("[ Memory usage: " + 
-							_df.format((RUNTIME.totalMemory() - RUNTIME.freeMemory())/1e6d) + "Mb / " + 
-							_df.format(RUNTIME.totalMemory()/1e6d) + "Mb" + 
-							" = " + _df.format(((double) (RUNTIME.totalMemory() - RUNTIME.freeMemory()) / 
+					System.out.print("[ Memory usage: " +
+							_df.format((RUNTIME.totalMemory() - RUNTIME.freeMemory())/1e6d) + "Mb / " +
+							_df.format(RUNTIME.totalMemory()/1e6d) + "Mb" +
+							" = " + _df.format(((double) (RUNTIME.totalMemory() - RUNTIME.freeMemory()) /
 											   (double) RUNTIME.totalMemory())) + " ]\n");
 				state.init(domain._hmObjects, nonFluents != null ? nonFluents._hmObjects : null, instance._hmObjects,
 						domain._hmTypes, domain._hmPVariables, domain._hmCPF,
 						instance._alInitState, nonFluents == null ? new ArrayList<PVAR_INST_DEF>() : nonFluents._alNonFluents, instance._alNonFluents,
-						domain._alStateConstraints, domain._alActionPreconditions, domain._alStateInvariants,  
+						domain._alStateConstraints, domain._alActionPreconditions, domain._alStateInvariants,
 						domain._exprReward, instance._nNonDefActions);
 				msg = createXMLRoundRequest();
 				Server.sendOneMessage(osw, msg);
@@ -254,8 +255,8 @@ public class Client {
 						state.clearPVariables(state._state);
 						state.setPVariables(state._state, obs);
 					}
-					
-					ArrayList<PVAR_INST_DEF> actions = 
+
+					ArrayList<PVAR_INST_DEF> actions =
 						policy.getActions(obs == null ? null : state);
 					msg = createXMLAction(actions);
 					if (SHOW_MSG)
@@ -271,14 +272,14 @@ public class Client {
 				double reward = processXMLRoundEnd(round_end_msg);
 				policy.roundEnd(reward);
 				//System.out.println("Round reward: " + reward);
-				
+
 				if (getTimeLeft(round_end_msg) <= 0l)
 					break;
 			}
 			isrc = Server.readOneMessage(isr);
 			double total_reward = processXMLSessionEnd(p, isrc);
 			policy.sessionEnd(total_reward);
-			
+
 			/** Close the socket connection. */
 			connection.close();
 			System.out.println(instr);
@@ -288,7 +289,7 @@ public class Client {
 			g.printStackTrace();
 		}
 	}
-	
+
 	static Element parseMessage(DOMParser p, InputSource isrc) throws RDDLXMLException {
 		try {
 			p.parse(isrc);
@@ -308,12 +309,12 @@ public class Client {
 
 		return p.getDocument().getDocumentElement();
 	}
-	
+
 	static String serialize(Document dom) {
 		OutputFormat format = new OutputFormat(dom);
 //		format.setIndenting(true);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		
+
 		XMLSerializer xmls = new XMLSerializer(baos, format);
 		try {
 			xmls.serialize(dom);
@@ -324,7 +325,7 @@ public class Client {
 		}
 		return null;
 	}
-	
+
 	static XMLType getXMLType(DOMParser p,InputSource isrc) {
 		Element e = p.getDocument().getDocumentElement();
 		if ( e.getNodeName().equals("turn") ) {
@@ -339,7 +340,7 @@ public class Client {
 			return XMLType.NONAME;
 		}
 	}
-	
+
 	static String createXMLSessionRequest (String problemName, String clientName) {
 		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 		try {
@@ -357,7 +358,7 @@ public class Client {
 			return null;
 		}
 	}
-	
+
 	static String createXMLRoundRequest() {
 		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 		try {
@@ -370,7 +371,7 @@ public class Client {
 			return null;
 		}
 	}
-	
+
 	static Client processXMLSessionInit(DOMParser p, InputSource isrc) throws RDDLXMLException {
 		try {
 			p.parse(isrc);
@@ -385,7 +386,7 @@ public class Client {
 		}
 		Client c = new Client();
 		Element e = p.getDocument().getDocumentElement();
-		
+
 		if ( !e.getNodeName().equals(Server.SESSION_INIT) ) {
 			throw new RDDLXMLException("not session init");
 		}
@@ -403,10 +404,10 @@ public class Client {
 		}
 		return c;
 	}
-	
+
 	static String createXMLAction(ArrayList<PVAR_INST_DEF> ds) {
 	//static String createXMLAction(State state, Policy policy) {
-		try {  
+		try {
 			DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 			DocumentBuilder db = dbf.newDocumentBuilder();
 			Document dom = db.newDocument();
@@ -426,7 +427,7 @@ public class Client {
 					action.appendChild(arg);
 				}
 				Element value = dom.createElement(Server.ACTION_VALUE);
-				Text textValue = d._oValue instanceof LCONST 
+				Text textValue = d._oValue instanceof LCONST
 						? dom.createTextNode( ((LCONST)d._oValue).toSuppString())
 						: dom.createTextNode( d._oValue.toString() ); // TODO $ <>... done$
 				value.appendChild(textValue);
@@ -452,8 +453,8 @@ public class Client {
 		}
 		return null;
 	}
-	
-	static int getANumber (DOMParser p, InputSource isrc, 
+
+	static int getANumber (DOMParser p, InputSource isrc,
 			String parentName, String name) {
 		Element e = p.getDocument().getDocumentElement();
 		if ( e.getNodeName().equals(parentName) ) {
@@ -490,7 +491,7 @@ public class Client {
 		}
 		return Double.valueOf(r.get(0));
 	}
-	
+
 	static long getTimeLeft(Element e) {
 		ArrayList<String> r = Server.getTextValue(e, Server.TIME_LEFT);
 		if ( r == null ) {
@@ -498,18 +499,18 @@ public class Client {
 		}
 		return Long.valueOf(r.get(0));
 	}
-	
+
 	static ArrayList<PVAR_INST_DEF> processXMLTurn (Element e,
 			State state) throws RDDLXMLException {
 
 		if ( e.getNodeName().equals(Server.TURN) ) {
-			
+
 			// We need to be able to distinguish no observations from
 			// all default observations.  -Scott
 			if (e.getElementsByTagName(Server.NULL_OBSERVATIONS).getLength() > 0) {
 				return null;
 			}
-			
+
 			// FYI: I think nl is never null.  -Scott
 			NodeList nl = e.getElementsByTagName(Server.OBSERVED_FLUENT);
 			if(nl != null && nl.getLength() > 0) {
@@ -537,7 +538,7 @@ public class Client {
 		throw new RDDLXMLException("Client.processXMLTurn: Should not reach this point");
 		//return null;
 	}
-	
+
 	static double processXMLRoundEnd(Element e) throws RDDLXMLException {
 		if ( e.getNodeName().equals(Server.ROUND_END) ) {
 			ArrayList<String> text = Server.getTextValue(e, Server.ROUND_REWARD);
@@ -548,7 +549,7 @@ public class Client {
 		}
 		return -1;
 	}
-			
+
 	static double processXMLSessionEnd(DOMParser p, InputSource isrc) throws RDDLXMLException {
 		try {
 			p.parse(isrc);
@@ -572,4 +573,3 @@ public class Client {
 		return -1;
 	}
 }
-

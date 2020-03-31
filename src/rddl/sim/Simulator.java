@@ -85,7 +85,7 @@ public class Simulator {
 		// Keep track of reward
 		double accum_reward = 0.0d;
 		double cur_discount = 1.0d;
-		ArrayList<State> states = new ArrayList<State>(_i._nHorizon != Integer.MAX_VALUE ? _i._nHorizon : 1000);
+		ArrayList<String> states = new ArrayList<String>(11);
 		ArrayList<Double> rewards = new ArrayList<Double>(_i._nHorizon != Integer.MAX_VALUE ? _i._nHorizon : 1000);
 
 		// Run problem for specified horizon
@@ -107,14 +107,19 @@ public class Simulator {
 			// Compute next state (and all intermediate / observation variables)
 			_state.computeNextState(action_list, _rand);
 
-			// Display state/observations that the agent sees
-			//v.display(_state, t);
-
 			// Calculate reward / objective and store
 			double reward = RDDL.ConvertToNumber(
 					_state._reward.sample(new HashMap<LVAR,LCONST>(), _state, _rand)).doubleValue();
 			rewards.add(reward);
-			states.add(_state);
+			if (t < _i._nHorizon-1){
+				states.add(getStateDescription(_state) + reward + "\t");
+			} else {
+				states.add(getStateDescription(_state) + reward);
+			}
+			// Display state/observations that the agent sees
+			v.display(_state, t);
+			System.out.println(states.get(t));
+
 			accum_reward += cur_discount * reward;
 			cur_discount *= _i._dDiscount;
 
@@ -135,7 +140,7 @@ public class Simulator {
 		return new Result(accum_reward, rewards);
 	}
 
-	public void write_data(ArrayList<State> states, ArrayList<Double> rewards, int trial) {
+	public void write_data(ArrayList<String> states, ArrayList<Double> rewards, int trial) {
 		String fileName = "data_output.tsv";
 
 		try {
@@ -155,15 +160,11 @@ public class Simulator {
 			this.started = true;
 			this.sb.append(trial + "\t");
 			for (int i=0; i<states.size(); i++){
-				String stateStr = getStateDescription(states.get(i));
-				if (i < states.size()-1){
-		  		this.sb.append(stateStr + rewards.get(i) + "\t");
-				} else {
-					this.sb.append(stateStr + rewards.get(i));
-				}
+				String stateStr = states.get(i);
+		  	this.sb.append(stateStr);
 			}
 			//this.sb.setLength(this.sb.length() - 1);
-			if (trial%10==0) {
+			if (trial%1000==0) {
 				System.out.println("trial:\t"+trial);
 				this.fw.write(this.sb.toString());
 				this.sb = new StringBuilder("");
@@ -196,27 +197,27 @@ public class Simulator {
 		  	try {
 		  	    // Go through all term groundings for variable p
 		  	    ArrayList<ArrayList<LCONST>> gfluents = s.generateAtoms(p);
-						System.out.println("\n- " + var_type + ": " + p);
+						// System.out.println("\n- " + var_type + ": " + p);
 		  	    for (ArrayList<LCONST> gfluent : gfluents){
 							if (!this.pomdp && var_type.equals("action")){
-								System.out.println("moved to after state");
+								// System.out.println("moved to after state");
 								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
 									actionSB.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
-									System.out.println(s.getPVariableAssign(p, gfluent));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
 								} else {
 									actionSB.append(s.getPVariableAssign(p, gfluent));
 									actionSB.append("\t");
-									System.out.println(s.getPVariableAssign(p, gfluent));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
 								}
 							} else {
-								System.out.println(gfluent+", type:\t"+s.getPVariableAssign(p, gfluent).getClass());
+								// System.out.println(gfluent+", type:\t"+s.getPVariableAssign(p, gfluent).getClass());
 								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
 									sb.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
-									System.out.println(s.getPVariableAssign(p, gfluent));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
 								} else {
 									sb.append(s.getPVariableAssign(p, gfluent));
 									sb.append("\t");
-									System.out.println(s.getPVariableAssign(p, gfluent));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
 								}
 							}
 						}
@@ -224,11 +225,11 @@ public class Simulator {
 				  		for (ArrayList<LCONST> gfluent : gfluents){
 								if ((s.getPVariableAssign(obs, gfluent) instanceof Boolean)){
 									sb.append(((Boolean)s.getPVariableAssign(obs, gfluent) ? "1\t" : "0\t"));
-									System.out.println(s.getPVariableAssign(obs, gfluent));
+									// System.out.println(s.getPVariableAssign(obs, gfluent));
 								} else {
 									sb.append(s.getPVariableAssign(obs, gfluent));
 									sb.append("\t");
-									System.out.println(s.getPVariableAssign(obs, gfluent));
+									// System.out.println(s.getPVariableAssign(obs, gfluent));
 								}
 							}
 	  	    	}
@@ -237,7 +238,7 @@ public class Simulator {
 		  	}
 			}
 		}
-		System.out.println(actionSB.toString());
+		// System.out.println(actionSB.toString());
 		return sb.toString()+actionSB.toString();
 	}
 
