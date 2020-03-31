@@ -118,8 +118,8 @@ public class Simulator {
 				states.add(getStateDescription(_state) + reward);
 			}
 			// Display state/observations that the agent sees
-			v.display(_state, t);
-			System.out.println(states.get(t));
+			//v.display(_state, t);
+			//System.out.println(states.get(t));
 
 			accum_reward += cur_discount * reward;
 			cur_discount *= _i._dDiscount;
