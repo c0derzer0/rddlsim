@@ -1,13 +1,13 @@
 /**
  * RDDL: Factored value iteration implementation.
- * 
+ *
  * @author Scott Sanner (ssanner [at] gmail.com)
  * @version 9/18/11
  *
  * This is essentially a Java version of SPUDD:
- * 
+ *
  *   J. Hoey, R. St-Aubin, A. J. Hu and C. Boutilier.
- *   SPUDD: Stochastic Planning Using Decision Diagrams. 
+ *   SPUDD: Stochastic Planning Using Decision Diagrams.
  *   UAI 1999.
  *
  * ./run rddl.sim.Simulator files/rddl/test/ rddl.solver.mdp.vi.VI sysadmin_test1 rddl.viz.SysAdminScreenDisplay
@@ -37,20 +37,25 @@ import rddl.translate.RDDL2Format;
 import util.CString;
 import util.Pair;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.File;
+
+
 public class VI extends Policy {
-	
+
 	public static int SOLVER_TIME_LIMIT = 40; // Solver time limit (seconds)
-	
-	public final static boolean SHOW_STATE   = true;
-	public final static boolean SHOW_ACTIONS = true;
-	public final static boolean SHOW_ACTION_TAKEN = true;
-	
+
+	public final static boolean SHOW_STATE   = false;
+	public final static boolean SHOW_ACTIONS = false;
+	public final static boolean SHOW_ACTION_TAKEN = false;
+
 	// Only for diagnostics, comment this out when evaluating
 	public final static boolean DISPLAY_SPUDD_ADDS_GRAPHVIZ = false;
 	public final static boolean DISPLAY_SPUDD_ADDS_TEXT = false;
-	
+
 	public RDDL2Format _translation = null;
-	
+
 	// Using CString wrapper to speedup hash lookups
 	public ADD _context;
 	public ArrayList<Integer> _allMDPADDs;
@@ -58,13 +63,18 @@ public class VI extends Policy {
 	public ArrayList<CString> _alPrimeStateVars;
 	public ArrayList<CString> _alActionNames;
 	public HashMap<CString, Action> _hmActionName2Action; // Holds transition function
-	
+
+	public boolean started = false;
+	public FileWriter fw;
+	public StringBuilder sb;
+	public int count = 0;
+
 	// Just use the default random seed
 	public Random _rand = new Random();
-		
+
 	// Constructors
 	public VI () { }
-	
+
 	public VI(String instance_name) {
 		super(instance_name);
 	}
@@ -72,39 +82,113 @@ public class VI extends Policy {
 	///////////////////////////////////////////////////////////////////////////
 	//                      Main Action Selection Method
 	///////////////////////////////////////////////////////////////////////////
+	public String getStateDescription(State s) {
+		StringBuilder sb = new StringBuilder();
+		StringBuilder actionSB = new StringBuilder();
+
+		PVAR_NAME state = new PVAR_NAME("running");
+		PVAR_NAME obs   = new PVAR_NAME("running-obs");
+
+		for (Map.Entry<String,ArrayList<PVAR_NAME>> e : s._hmTypeMap.entrySet()) {
+
+			// Go through all variable names p for a variable type
+			for (PVAR_NAME p : e.getValue()) {
+
+				// Show interms only if they are derived
+				PVARIABLE_DEF def = s._hmPVariables.get(p._pvarUnprimed);
+				if (def instanceof PVARIABLE_INTERM_DEF
+					&& !((PVARIABLE_INTERM_DEF)def)._bDerived)
+					continue;
+				String var_type = e.getKey();
+				var_type = var_type.replace("interm", "derived");
+				if (var_type.equals("nonfluent") || var_type.equals("action")) continue;
+				try {
+						// Go through all term groundings for variable p
+						ArrayList<ArrayList<LCONST>> gfluents = s.generateAtoms(p);
+						// System.out.println("\n- " + var_type + ": " + p);
+						for (ArrayList<LCONST> gfluent : gfluents){
+							if (var_type.equals("action")){
+								// System.out.println("moved to after state");
+								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
+									actionSB.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
+								} else {
+									actionSB.append(s.getPVariableAssign(p, gfluent));
+									actionSB.append("\t");
+									// System.out.println(s.getPVariableAssign(p, gfluent));
+								}
+							} else {
+								// System.out.println(gfluent+", type:\t"+s.getPVariableAssign(p, gfluent).getClass());
+								if ((s.getPVariableAssign(p, gfluent) instanceof Boolean)){
+									sb.append(((Boolean)s.getPVariableAssign(p, gfluent) ? "1\t" : "0\t"));
+									// System.out.println(s.getPVariableAssign(p, gfluent));
+								} else {
+									sb.append(s.getPVariableAssign(p, gfluent));
+									sb.append("\t");
+									// System.out.println(s.getPVariableAssign(p, gfluent));
+								}
+							}
+						}
+						if (s._hmPVariables.get(obs) != null) {
+							for (ArrayList<LCONST> gfluent : gfluents){
+								if ((s.getPVariableAssign(obs, gfluent) instanceof Boolean)){
+									sb.append(((Boolean)s.getPVariableAssign(obs, gfluent) ? "1\t" : "0\t"));
+									// System.out.println(s.getPVariableAssign(obs, gfluent));
+								} else {
+									sb.append(s.getPVariableAssign(obs, gfluent));
+									sb.append("\t");
+									// System.out.println(s.getPVariableAssign(obs, gfluent));
+								}
+							}
+						}
+				} catch (EvalException ex) {
+						System.out.println("- could not retrieve assignment for " + p + "/" + obs + "\n");
+				}
+			}
+		}
+		// System.out.println(actionSB.toString());
+		// if (this.pomdp){
+		// 	return sb.toString();
+		// } else {
+			return sb.toString()+actionSB.toString();
+		// }
+	}
 
 	public ArrayList<PVAR_INST_DEF> getActions(State s) throws EvalException {
-		
-		//System.out.println("FULL STATE:\n\n" + SPerseusSPUDDPolicy.getStateDescription(s));
 
+		//System.out.println("FULL STATE:\n\n" + SPerseusSPUDDPolicy.getStateDescription(s));
+		String outstr;
 		if (s == null) {
 			// This should only occur on the **first step** of a POMDP trial
 			System.err.println("ERROR: NO STATE/OBS: MDP must have state.");
 			System.exit(1);
 		}
-		
+
 		// Get a set of all true observation or state variables
-		TreeSet<CString> true_vars = 
+		TreeSet<CString> true_vars =
 			CString.Convert2CString(SPerseusSPUDDPolicy.getTrueFluents(s, "states"));
 		if (SHOW_STATE) {
 			System.out.println("\n==============================================");
-			System.out.println("\nTrue state variables:");
+			System.out.println("\nState description:");
 			for (CString prop_var : true_vars)
 				System.out.println(" - " + prop_var);
 		}
-		
-		// Get a map of { legal action names -> RDDL action definition }  
-		Map<String,ArrayList<PVAR_INST_DEF>> action_map = 
+
+		// Get a map of { legal action names -> RDDL action definition }
+		Map<String,ArrayList<PVAR_INST_DEF>> action_map =
 			ActionGenerator.getLegalBoolActionMap(s);
-		
+
+		int act_index = 0;
+		int action_taken_index = 0;
+
 		// Use the precomputed q-functions (cached when the value function
 		// was computed) to determine the best action for this state
 		String action_taken = null;
 		if (_hmAct2Regr == null) {
 			// No VI results available, just take random action
 			ArrayList<String> actions = new ArrayList<String>(action_map.keySet());
-			action_taken = actions.get(_rand.nextInt(actions.size()));			
-			
+			action_taken = actions.get(_rand.nextInt(actions.size()));
+
 			if (SHOW_ACTION_TAKEN)
 				System.out.println("\n--> [Random] action taken: " + action_taken);
 		} else {
@@ -113,13 +197,11 @@ public class VI extends Policy {
 
 			double best_action_value = -Double.MAX_VALUE;
 			ArrayList add_state_assign = DDUtils.ConvertTrueVars2DDAssign(_context, true_vars, _alStateVars);
-
 			// Find best action by evaluating each Q-function
 			for (Map.Entry<CString, Integer> me : _hmAct2Regr.entrySet()) {
-				
 				if (!action_map.keySet().contains(me.getKey()._string))
 					continue; // Action is not legal in this state
-				
+
 				Integer q_function = me.getValue();
 				//System.out.println("Qfun:\n" + _context.printNode(q_function) + "\n" + add_state_assign);
 				double action_value = _context.evaluate(q_function, add_state_assign);
@@ -128,21 +210,73 @@ public class VI extends Policy {
 				if (action_taken == null || action_value > best_action_value) {
 					action_taken = me.getKey()._string;
 					best_action_value = action_value;
+					if (action_taken.equals("noop")){
+						action_taken_index = -1;
+					} else {
+						action_taken_index = act_index;
+					}
 				}
+				if(!me.getKey()._string.equals("noop"))  act_index++;
 			}
-			
+
 			if (SHOW_ACTION_TAKEN)
-				System.out.println("\n--> Best action taken [" + best_action_value + "]: " 
+				System.out.println("\n--> Best action taken [" + best_action_value + "]: "
 						+ action_taken);
 		}
-		
+		String actions = "";
+		for(int i = 0; i < act_index; i++){
+			if(i == action_taken_index){
+				actions += "1";
+			} else{
+				actions += "0";
+			}
+			if(i < act_index-1){
+				actions += "\t";
+			}
+		}
+		String state_str = getStateDescription(s);
+		state_str += actions;
+		if (SHOW_ACTION_TAKEN) {
+			System.out.println("actions:\t" + actions);
+			System.out.println(state_str);
+		}
+		write_data(state_str);
+		this.count++;
 		return action_map.get(action_taken);
 	}
+	public void write_data(String state) {
+		String fileName = "VI_policy_data.tsv";
 
+		try {
+		  File outFile = new File(fileName);
+		  if (!outFile.exists()) {
+				outFile.createNewFile();
+				this.sb = new StringBuilder("");
+				this.fw = new FileWriter(fileName, true);
+		  } else if (!this.started) {
+				outFile.delete();
+				outFile.createNewFile();
+				this.sb = new StringBuilder("");
+				this.fw = new FileWriter(fileName, true);
+		  } else {
+				this.sb.append("\n");
+			}
+			this.started = true;
+		  this.sb.append(state);
+			//this.sb.setLength(this.sb.length() - 1);
+			if (this.count%100==0) {
+				System.out.println("count:\t"+this.count);
+				this.fw.write(this.sb.toString());
+				this.sb = new StringBuilder("");
+			}
+		} catch (IOException ioe) {
+		  System.out.println("IOException occurred - " + ioe.getMessage());
+		}
+	}
 	///////////////////////////////////////////////////////////////////////////
 	//                         Round / Session Signals
 	//
-	// If you need to keep track of state information across rounds or sessions, 
+	// If you need to keep track of state information across rounds or sessions,
 	// just modify these methods.  (Each session consists of total_rounds rounds.)
 	///////////////////////////////////////////////////////////////////////////
 
@@ -150,10 +284,10 @@ public class VI extends Policy {
 		System.out.println("\n*********************************************************");
 		System.out.println(">>> ROUND INIT " + round_number + "/" + total_rounds + "; time remaining = " + time_left + ", horizon = " + horizon);
 		System.out.println("*********************************************************");
-				
+
 		// Build ADDs for transition, reward and value function (if not already built)
 		if (_translation == null) {
-			
+
 			// Use RDDL2Format to build SPUDD ADD translation of _sInstanceName
 			try {
 				_translation = new RDDL2Format(_rddl, _sInstanceName, RDDL2Format.SPUDD_CURR, "");
@@ -174,61 +308,61 @@ public class VI extends Policy {
 				_alStateVars.add(new CString(s));
 				_alPrimeStateVars.add(new CString(s + "'"));
 			}
-			
+
 			_alActionNames = new ArrayList<CString>();
 			for (String a : _translation._hmActionMap.keySet())
 				_alActionNames.add(new CString(a));
-	
+
 			// Now extract the reward and transition ADDs
 			_hmActionName2Action = new HashMap<CString,Action>();
 			for (String a : _translation._hmActionMap.keySet()) {
 				HashMap<CString,Integer> cpts = new HashMap<CString,Integer>();
 				int reward = _context.getConstantNode(0d);
-				
+
 				// Build reward from additive decomposition
 				ArrayList<Integer> reward_summands = _translation._act2rewardDD.get(a);
 				for (int summand : reward_summands)
 					reward = _context.applyInt(reward, summand, ADD.ARITH_SUM);
 				_allMDPADDs.add(reward);
-				
+
 				// Build CPTs
 				for (String s : _translation._alStateVars) {
 					int dd = _translation._var2transDD.get(new Pair(a, s));
-					
+
 					int dd_true  = _context.getVarNode(s + "'", 0d, 1d);
 					dd_true = _context.applyInt(dd_true, dd, ADD.ARITH_PROD);
-		
+
 					int dd_false = _context.getVarNode(s + "'", 1d, 0d);
 					//System.out.println("Multiplying..." + dd + ", " + DD_ONE);
 					//_context.printNode(dd);
 					//_context.printNode(DD_ONE);
 					int one_minus_dd = _context.applyInt(_context.getConstantNode(1d), dd, ADD.ARITH_MINUS);
 					dd_false = _context.applyInt(dd_false, one_minus_dd, ADD.ARITH_PROD);
-					
+
 					// Now have "dual action diagram" cpt DD
 					int cpt = _context.applyInt(dd_true, dd_false, ADD.ARITH_SUM);
 
 					cpts.put(new CString(s + "'"), cpt);
 					_allMDPADDs.add(cpt);
 				}
-				
+
 				// Build Action and add to HashMap
 				CString action_name = new CString(a);
 				Action action = new Action(_context, action_name, cpts, reward);
 				_hmActionName2Action.put(action_name, action);
 			}
-			
+
 			// Display ADDs on terminal?
 			if (DISPLAY_SPUDD_ADDS_TEXT) {
 				System.out.println("State variables: " + _alStateVars);
 				System.out.println("Action names: " + _alActionNames);
-				
+
 				for (CString a : _alActionNames) {
 					Action action = _hmActionName2Action.get(a);
 					System.out.println("Content of action '" + a + "'\n" + action);
 				}
 			}
-			
+
 			// Display ADDs in graph visualization window?
 			// (only show a subset... 100's to display otherwise)
 			final int MAX_DISPLAY = 10;
@@ -236,7 +370,7 @@ public class VI extends Policy {
 				int displayed = 0;
 				for (CString a : _alActionNames) {
 					Action action = _hmActionName2Action.get(a);
-					
+
 					// Show cpts for each action/var
 					for (CString var : _alStateVars) {
 						_context.getGraph(action._hmStateVar2CPT.get(var)).launchViewer();
@@ -244,15 +378,15 @@ public class VI extends Policy {
 						if (++displayed >= MAX_DISPLAY)
 							break;
 					}
-					
+
 					// Show reward for action
 					_context.getGraph(action._reward).launchViewer();
-					
+
 					if (++displayed >= MAX_DISPLAY)
 						break;
-				}				
+				}
 			}
-			
+
 			// Call value iteration solver for SOLVER_TIME_LIMIT seconds
 			try {
 				resetSolver();
@@ -264,9 +398,9 @@ public class VI extends Policy {
 				e.printStackTrace(System.err);
 				System.exit(1);
 			} finally {
-				
+
 				System.out.println("\n*********************************************************");
-				System.out.println("Solution in VI exit at iteration " + _nIter + ": " + 
+				System.out.println("Solution in VI exit at iteration " + _nIter + ": " +
 						_context.countExactNodes(_valueDD) + " nodes.");
 
 				// Display value function if small enough
@@ -276,31 +410,31 @@ public class VI extends Policy {
 					_context.exportTree(_valueDD, new PrintWriter(sw), true);
 					System.out.println(sw);
 				}
-				
+
 				System.out.println("*********************************************************");
 			}
-		}		
+		}
 	}
-	
+
 	public void roundEnd(double reward) {
 		System.out.println("\n*********************************************************");
 		System.out.println(">>> ROUND END, reward = " + reward);
 		System.out.println("*********************************************************");
 	}
-	
+
 	public void sessionEnd(double total_reward) {
 		System.out.println("\n*********************************************************");
 		System.out.println(">>> SESSION END, total reward = " + total_reward);
 		System.out.println("*********************************************************");
 	}
-	
+
 	///////////////////////////////////////////////////////////////////////////
 	//                      Factored Value Iteration Solver
 	///////////////////////////////////////////////////////////////////////////
-	
+
 	// Local constants
 	public final static int VERBOSE_LEVEL = 1; // Determines how much output is displayed
-	
+
 	public final static boolean ALWAYS_FLUSH = false; // Always flush DD caches?
 	public final static double FLUSH_PERCENT_MINIMUM = 0.3d; // Won't flush until < this amt
 
@@ -329,7 +463,7 @@ public class VI extends Policy {
 	// Initialize all variables (call before starting value iteration)
 	public void resetSolver() {
 		_prevDD = _maxDD = -1;
-		_valueDD = _context.getConstantNode(0d); // Initialize to 0			
+		_valueDD = _context.getConstantNode(0d); // Initialize to 0
 		_nIter = -1;
 		_sRegrAction = null;
 		_rddlInstance = _rddl._tmInstanceNodes.get(this._sInstanceName);
@@ -339,15 +473,15 @@ public class VI extends Policy {
 		}
 		_dDiscount = _rddlInstance._dDiscount;
 		_nHorizon  = _rddlInstance._nHorizon;
-		
-		
+
+
 		_hmAct2Regr   = null;
 		_alSaveNodes  = new ArrayList<Integer>();
-		
+
 		_dRewardRange = 0d;
 		for (Action a : _hmActionName2Action.values())
-			_dRewardRange = Math.max(_dRewardRange, 
-					_context.getMaxValue(a._reward) - 
+			_dRewardRange = Math.max(_dRewardRange,
+					_context.getMaxValue(a._reward) -
 			        _context.getMinValue(a._reward));
 	}
 
@@ -355,7 +489,7 @@ public class VI extends Policy {
 	public int solve(int time_limit_secs) throws TimeOutException {
 
 		_nTimeLimitSecs = time_limit_secs;
-		
+
 		System.out.println("Using time limit: " + _nTimeLimitSecs + " seconds");
 		System.out.println("Using discount:   " + _dDiscount);
 		System.out.println("Using horizon:    " + _nHorizon + "\n");
@@ -391,7 +525,7 @@ public class VI extends Policy {
 			if (_hmAct2Regr != null) // Save previous regression (needed if time out)
 				for (CString a : _alActionNames)
 					saveNode(_hmAct2Regr.get(a));
-			
+
 			//////////////////////////////////////////////////////////////
 			// Iterate over each action to obtain Q-function from _valueDD
 			//////////////////////////////////////////////////////////////
@@ -420,12 +554,12 @@ public class VI extends Policy {
 						g.addNodeStyle("_temp_", "filled");
 						g.addNodeColor("_temp_", "lightblue");
 						g.addUniLink("_temp_", "_temp_");
-	
+
 						// g.genDotFile(type + "value.dot");
 						g.launchViewer(1300, 770);
 					}
 				}
-				
+
 				// Cache maintenance - after regression
 				saveNode(regr); // Save latest Q-function regression
 				flushCaches();
@@ -434,7 +568,7 @@ public class VI extends Policy {
 				//////////////////////////////////////////////////////////////
 				// Take the max over this action and the previous action
 				//////////////////////////////////////////////////////////////
-				_maxDD = ((_maxDD == -1) ? regr : 
+				_maxDD = ((_maxDD == -1) ? regr :
 						  _context.applyInt(_maxDD, regr, DD.ARITH_MAX));
 
 				// Cache maintenance - after maximization
@@ -454,7 +588,7 @@ public class VI extends Policy {
 			_valueDD = _maxDD;
 			_hmAct2Regr = temp_regr;
 			_nIter++;
-			
+
 			////////////////////////////////////////////////////////////////////
 			// Compute max difference between current and previous value function
 			////////////////////////////////////////////////////////////////////
@@ -507,11 +641,11 @@ public class VI extends Policy {
 		// For each next-state variable in DBN for action 'a'
 		//////////////////////////////////////////////////////////////
 		for (Map.Entry<Integer, Integer> me : a._hmVarID2CPT.entrySet()) {
-			
+
 			Integer cpt_dd  = me.getValue();
 			Integer head_var_gid = me.getKey();
-			
-			// No need to regress variables not in the value function  
+
+			// No need to regress variables not in the value function
 			if (!vfun_gids.contains(head_var_gid)) {
 				if (VERBOSE_LEVEL >= 1) {
 					System.out.println("Skipping " + _context._hmID2VarName.get(head_var_gid) + " / " + head_var_gid);
@@ -542,18 +676,18 @@ public class VI extends Policy {
 			flushCaches();
 			checkTimeLimit();
 		}
-		
+
 		// Discount the regressed function (if needed)
 		if (_dDiscount < 1d)
 			dd_ret = _context.scalarMultiply(dd_ret, _dDiscount);
 
 		// Add in action-dependent reward
 		dd_ret = _context.applyInt(dd_ret, a._reward, DD.ARITH_SUM);
-		
+
 		// Return regressed value function
 		return dd_ret;
 	}
-	
+
 	////////////////////////////////////////////////////////////////////////////
 	// DD Cache Maintenance for MDPs
 	////////////////////////////////////////////////////////////////////////////
@@ -562,7 +696,7 @@ public class VI extends Policy {
 	public void clearSaveNodes() {
 		_alSaveNodes.clear();
 	}
-	
+
 	// Remove nodes on save list
 	public void clearSaveNode(Integer dd) {
 		_alSaveNodes.remove(dd);
@@ -594,7 +728,7 @@ public class VI extends Policy {
 
 		_context.flushCaches(false);
 	}
-	
+
 	////////////////////////////////////////////////////////////////////////////
 	// Miscellaneous helper methods
 	////////////////////////////////////////////////////////////////////////////
@@ -604,7 +738,7 @@ public class VI extends Policy {
 		if (elapsed_time > (double)_nTimeLimitSecs)
 			throw new TimeOutException("Elapsed time " + elapsed_time + " (s) exceeded time limit of " + _nTimeLimitSecs + " (s)");
 	}
-	
+
 	public static String MemDisplay() {
 		long total = RUNTIME.totalMemory();
 		long free = RUNTIME.freeMemory();
